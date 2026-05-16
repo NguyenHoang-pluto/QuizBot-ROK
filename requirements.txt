@@ -1,0 +1,17 @@
+# Thư viện chính cho Giao diện và Hệ thống
+customtkinter
+pillow
+keyboard
+mss
+numpy
+
+# Thư viện cho OCR và Xử lý ảnh
+pytesseract
+opencv-python
+
+# Thư viện cho Crawler và API
+requests
+beautifulsoup4
+
+# Thư viện xử lý dữ liệu
+openpyxl
