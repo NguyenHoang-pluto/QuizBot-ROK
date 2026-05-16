@@ -36,8 +36,10 @@ def parse_cod_guide(content):
 def import_scraped():
     db = RoKDatabase()
     
-    ali_path = r"C:\Users\User\.gemini\antigravity\brain\a6176c24-89ee-4c66-851f-96b6830b823b\.system_generated\steps\65\content.md"
-    cod_path = r"C:\Users\User\.gemini\antigravity\brain\a6176c24-89ee-4c66-851f-96b6830b823b\.system_generated\steps\82\content.md"
+    # Lấy đường dẫn từ cấu hình (đã được nạp từ .env)
+    from src.core.config import ALI_PATH, COD_PATH
+    ali_path = ALI_PATH
+    cod_path = COD_PATH
     
     total_added = 0
     
