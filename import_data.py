@@ -1,4 +1,10 @@
-from src.database.db_manager import RoKDatabase
+import os
+import sys
+
+# Thêm thư mục hiện tại vào path để import được src
+sys.path.append(os.getcwd())
+
+from src.core.db_manager import RoKDatabase
 
 def bulk_import():
     db = RoKDatabase()
