@@ -193,12 +193,18 @@ def clean_question_for_search(q):
     # Loại bỏ dấu câu cơ bản
     q = re.sub(r'[\?\.\,\!\-\_\(\)]', ' ', q)
     
-    # Danh sách các từ dừng / từ thừa hay gặp trong câu hỏi
+    # Danh sách các từ dừng / từ thừa hay gặp trong câu hỏi (Cả có dấu và không dấu)
     stop_words = [
+        # Có dấu
         "thành phố", "nào", "sau đây", "nằm ở", "ở", "vào", "rơi", "tháng mấy", "là gì", "là ai", 
         "bao nhiêu", "như thế nào", "tại sao", "cái gì", "ai là", "quốc gia", "nước nào", "đơn vị", 
         "chỉ huy", "tướng", "vị", "năm nào", "nhóm", "loại", "vật phẩm", "được", "mệnh danh", "gọi là",
-        "có", "thể", "trong", "trên", "dưới", "của", "và", "hoặc", "thì", "mà", "là", "một", "những", "các"
+        "có", "thể", "trong", "trên", "dưới", "của", "và", "hoặc", "thì", "mà", "là", "một", "những", "các",
+        # Không dấu tương ứng
+        "thanh pho", "nao", "sau day", "nam o", "o", "vao", "roi", "thang may", "la gi", "la ai", 
+        "bao nhieu", "nhu the nao", "tai sao", "cai gi", "ai la", "quoc gia", "nuoc nao", "don vi", 
+        "chi huy", "tuong", "vi", "nam nao", "nhom", "loai", "vat pham", "duoc", "menh danh", "goi la",
+        "co", "the", "trong", "tren", "duoi", "cua", "va", "hoac", "thi", "ma", "la", "mot", "nhung", "cac"
     ]
     
     # Xóa từ thừa
@@ -233,21 +239,36 @@ def wikipedia_search_answer(question):
             'srlimit': 3
         }
         res = requests.get(search_url, params=params, headers=headers, timeout=5)
+        
+        search_results = []
         if res.status_code == 200:
-            data = res.json()
-            search_results = data.get('query', {}).get('search', [])
-            if search_results:
-                lines = []
-                for i, r in enumerate(search_results):
-                    title = r.get('title')
-                    snippet = r.get('snippet', '')
-                    # Loại bỏ tất cả thẻ HTML trong đoạn trích (ví dụ: <span class="searchmatch">)
-                    clean_snippet = re.sub(r'<[^>]*>', '', snippet).strip()
-                    if clean_snippet:
-                        lines.append(f"{i+1}. {title}: {clean_snippet}...")
-                
-                if lines:
-                    return "\n".join(lines)
+            search_results = res.json().get('query', {}).get('search', [])
+            
+        # Fallback: Nếu không tìm thấy kết quả từ câu hỏi được khôi phục dấu (do OCR bị sai/nhiễu quá nhiều
+        # dẫn tới dịch thuật dịch sai nghĩa hoàn toàn), chúng ta sẽ làm sạch câu gốc thô của OCR và tìm kiếm trực tiếp.
+        if not search_results:
+            raw_cleaned = clean_question_for_search(question)
+            # Chỉ giữ các từ có ý nghĩa (bỏ các ký tự rác cực ngắn hoặc số thứ tự rác)
+            raw_cleaned_words = [w for w in raw_cleaned.split() if w.isalnum() and len(w) >= 2]
+            raw_cleaned = " ".join(raw_cleaned_words)
+            if raw_cleaned:
+                params['srsearch'] = raw_cleaned
+                res = requests.get(search_url, params=params, headers=headers, timeout=5)
+                if res.status_code == 200:
+                    search_results = res.json().get('query', {}).get('search', [])
+                    
+        if search_results:
+            lines = []
+            for i, r in enumerate(search_results):
+                title = r.get('title')
+                snippet = r.get('snippet', '')
+                # Loại bỏ tất cả thẻ HTML trong đoạn trích (ví dụ: <span class="searchmatch">)
+                clean_snippet = re.sub(r'<[^>]*>', '', snippet).strip()
+                if clean_snippet:
+                    lines.append(f"{i+1}. {title}: {clean_snippet}...")
+            
+            if lines:
+                return "\n".join(lines)
         return ""
     except:
         return ""
@@ -281,3 +302,46 @@ def google_search_answer(question):
         return wiki_ans
         
     return ""
+
+
+def google_and_wiki_corpus(question):
+    """
+    Tìm kiếm câu hỏi trên cả Google và Wikipedia, tổng hợp tất cả các đoạn trích
+    và nội dung kết quả để làm giàu kho văn bản cho việc phân tích tần suất co-occurrence.
+    """
+    corpus_parts = []
+    
+    # 1. Tìm trên Google
+    try:
+        url = f"https://www.google.com/search?q={question}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+            'Accept-Language': 'vi,en-US;q=0.9,en;q=0.8'
+        }
+        res = requests.get(url, headers=headers, timeout=5, verify=False)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.content, 'html.parser')
+            # Lấy tất cả các kết quả BNeawe s3v9rd AP7Wnd (di động)
+            for div in soup.find_all('div', class_='BNeawe s3v9rd AP7Wnd'):
+                text = div.get_text().strip()
+                if text:
+                    corpus_parts.append(text)
+            
+            # Lấy tất cả kết quả VwiC3b (máy tính)
+            for div in soup.select('div[class*="VwiC3b"]'):
+                text = div.get_text().strip()
+                if text:
+                    corpus_parts.append(text)
+    except Exception as e:
+        pass
+        
+    # 2. Tìm trên Wikipedia
+    try:
+        wiki_ans = wikipedia_search_answer(question)
+        if wiki_ans:
+            corpus_parts.append(wiki_ans)
+    except Exception as e:
+        pass
+        
+    # Ghép tất cả thành một chuỗi lớn
+    return "\n".join(corpus_parts)

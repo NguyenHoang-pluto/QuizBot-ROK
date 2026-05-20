@@ -88,7 +88,8 @@ class RoKDatabase:
 
     def calculate_match_score(self, target_clean, q_clean):
         """Tính điểm tương đồng kết hợp giữa độ tương đồng ký tự (SequenceMatcher),
-        độ trùng khớp từ khóa (Jaccard) và tỷ lệ phủ từ khóa (Overlap)"""
+        độ tương đồng từ khóa Jaccard và tỷ lệ phủ từ khóa có trọng số độ dài (Length-Weighted Overlap)
+        sau khi loại bỏ stop words."""
         # 1. Điểm tương đồng ký tự (SequenceMatcher)
         ratio = SequenceMatcher(None, target_clean, q_clean).ratio()
         
@@ -97,19 +98,43 @@ class RoKDatabase:
         if not w_target or not w_db:
             return ratio
             
-        # 2. Điểm tương đồng từ khóa Jaccard (Số từ trùng khớp / Tổng số từ duy nhất)
-        intersect = w_target.intersection(w_db)
-        union = w_target.union(w_db)
-        jaccard = len(intersect) / len(union) if union else 0.0
+        # 2. Loại bỏ stop words để tránh so khớp nhầm các câu hỏi có cùng cấu trúc "Ai là...", "Điều nào..."
+        STOP_WORDS = {
+            'ai', 'la', 'nguoi', 'cua', 'trong', 'co', 'bao', 'nhieu', 'nao', 'sau', 'day', 'khong', 'thi', 
+            'va', 'de', 'duoc', 'mot', 'nhung', 'cac', 'o', 'da', 'tung', 'lam', 'ra', 'tai', 'boi', 'cho', 
+            'biet', 'vi', 'the', 'nao', 'gi', 'dau', 'the', 'nao', 'truoc', 'sau', 'chinh', 'thuc',
+            # English common words
+            'who', 'is', 'the', 'of', 'in', 'has', 'how', 'many', 'which', 'following', 'not', 'then', 
+            'and', 'to', 'be', 'a', 'some', 'these', 'at', 'by', 'for', 'know', 'why', 'what', 'where',
+            'first', 'second', 'third'
+        }
+        w_target_f = w_target - STOP_WORDS
+        w_db_f = w_db - STOP_WORDS
         
-        # 3. Điểm tỷ lệ phủ từ khóa Overlap (Số từ trùng khớp / Độ dài câu ngắn hơn)
-        # Chỉ áp dụng nếu cả hai câu đều dài từ 3 từ trở lên để tránh so khớp nhầm câu siêu ngắn
-        overlap = 0.0
-        if len(w_target) >= 3 and len(w_db) >= 3:
-            overlap = len(intersect) / min(len(w_target), len(w_db))
+        intersect_f = w_target_f.intersection(w_db_f)
+        
+        # 3. Tính tỷ lệ phủ từ khóa có trọng số độ dài (Length-Weighted Overlap)
+        # Giúp ưu tiên khớp các từ khóa dài, đặc trưng hơn là các từ ngắn vô nghĩa
+        if intersect_f:
+            sum_intersect_len = sum(len(w) for w in intersect_f)
+            sum_target_len = sum(len(w) for w in w_target_f)
+            sum_db_len = sum(len(w) for w in w_db_f)
+            lw_overlap = sum_intersect_len / min(sum_target_len, sum_db_len)
+        else:
+            lw_overlap = 0.0
             
-        # Trả về điểm số cao nhất. Trọng số overlap nhân 0.9 để Sequence/Jaccard vẫn được ưu tiên hơn
-        return max(ratio, jaccard, overlap * 0.9)
+        # 4. Điểm tương đồng từ khóa Jaccard (không tính stop words)
+        union_f = w_target_f.union(w_db_f)
+        jaccard_f = len(intersect_f) / len(union_f) if union_f else 0.0
+        
+        # Nếu không trùng khớp từ khóa quan trọng nào (nhưng có từ khóa để khớp)
+        if len(w_target_f) > 0 and len(w_db_f) > 0 and not intersect_f:
+            if ratio >= 0.85:
+                return ratio
+            return ratio * 0.2
+            
+        # Trọng số kết hợp: 25% ký tự + 35% Jaccard + 40% Phủ từ khóa có trọng số độ dài
+        return 0.25 * ratio + 0.35 * jaccard_f + 0.40 * lw_overlap
 
     def find_answer(self, game, question_text):
         if not question_text: return None
