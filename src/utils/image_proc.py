@@ -52,9 +52,15 @@ def preprocess_option_for_ocr(img_np, scale=2.0):
     if scale != 1.0:
         gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     
-    # Dùng global threshold THRESH_BINARY_INV vì chữ đáp án game thường màu trắng
-    # Điều này sẽ làm chữ trắng thành đen (0) và nền thành trắng (255)
-    # Tesseract đọc chữ đen trên nền trắng chính xác nhất. Ngưỡng 150-180 là tối ưu.
-    _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+    # Sử dụng OTSU kết hợp THRESH_BINARY_INV để tự động tìm ngưỡng phù hợp
+    # cho chữ trắng trên nền sáng (hoặc tối). Tránh lỗi khi nền game (như giấy da)
+    # có độ sáng cao hơn ngưỡng cố định 150 làm đen toàn bộ ảnh.
+    # OTSU gặp lỗi với ảnh crop quá nhỏ (ít chữ, nhiều nền vân giấy) khiến nó tách nhầm vân nền thành chữ.
+    # Adaptive Threshold với C=-10 sẽ giúp chỉ những nét chữ màu trắng (sáng hơn nền xung quanh)
+    # mới bị biến thành đen, nền giấy vẫn giữ nguyên màu trắng.
+    binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, -10)
+    
+    # Thêm viền trắng xung quanh để tránh Tesseract nhận diện viền ảnh thành ký tự rác như '|'
+    binary = cv2.copyMakeBorder(binary, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
     
     return binary

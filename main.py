@@ -139,6 +139,8 @@ class RoKQuizController:
             return
         self.bot_running = not self.bot_running
         if self.bot_running:
+            self.ui.overlay_q.set_scan_mode(True)
+            self.ui.overlay_opts.set_scan_mode(True)
             self.ui.overlay_q.show_region(qx, qy, qw, qh)
             self.ui.overlay_opts.show_region(ox, oy, ow, oh)
             try:
@@ -155,6 +157,8 @@ class RoKQuizController:
             self.ui.iconify()
             threading.Thread(target=self.scan_loop, daemon=True).start()
         else:
+            self.ui.overlay_q.set_scan_mode(False)
+            self.ui.overlay_opts.set_scan_mode(False)
             self.ui.overlay_q.withdraw()
             self.ui.overlay_opts.withdraw()
             self.ui.hud.withdraw()
@@ -394,9 +398,10 @@ class RoKQuizController:
                 half_w = wopt // 2
                 half_h = hopt // 2
                 
-                # Áp dụng margin cực nhỏ để không cắt mất chữ (chỉ bỏ viền)
-                pad_w = 2
-                pad_h = 2
+                # Tăng padding lùi vào trong để hoàn toàn tránh viền vàng của overlay
+                # (viền có thể dày vài pixel tùy DPI), viền này hay bị Tesseract đọc thành ký tự '|' hoặc 'L'
+                pad_w = 10
+                pad_h = 10
                 
                 sub_w = half_w - 2 * pad_w
                 sub_h = half_h - 2 * pad_h
@@ -440,7 +445,9 @@ class RoKQuizController:
                     ly2 = max(0, min(y1 - top + h1, img_h))
                     return img_np[ly1:ly2, lx1:lx2]
                 
-                q_img = get_slice(xq, yq, wq, hq)
+                # Cắt lùi vào 5px để tránh viền đỏ của overlay câu hỏi
+                q_pad = 5
+                q_img = get_slice(xq + q_pad, yq + q_pad, wq - 2*q_pad, hq - 2*q_pad)
                 a_img = get_slice(xa, ya, wa, ha)
                 b_img = get_slice(xb, yb, wb, hb)
                 c_img = get_slice(xc, yc, wc, hc)
@@ -473,11 +480,11 @@ class RoKQuizController:
                         if opt_img.size > 0:
                             proc_opt = preprocess_option_for_ocr(opt_img, scale=IMAGE_UPSCALING)
                             opt_text = pytesseract.image_to_string(proc_opt, lang=OCR_LANG, config='--psm 6').strip()
-                            # Làm sạch tiền tố như A., B., C., D.
-                            opt_text_cleaned = re.sub(r'^[A-Da-d][\.]?[\s\-\:\)\,\_]*', '', opt_text).strip()
-                            # Loại bỏ ký tự rác dòng đầu nếu quá ngắn
+                            # Làm sạch tiền tố như A., B., C., D. và các ký tự rác ở đầu (đôi khi C bị đọc nhầm thành €)
+                            opt_text_cleaned = re.sub(r'^[^a-zA-Z0-9]*[A-Da-d€][\.]?[\s\-\:\)\,\_]*', '', opt_text).strip()
+                            # Loại bỏ ký tự rác (chỉ giữ lại dòng có chứa ít nhất 1 chữ/số để tránh xóa mất đáp án 1 chữ số như '2', '3')
                             lines = opt_text_cleaned.split('\n')
-                            opt_text_cleaned = ' '.join(l.strip() for l in lines if len(l.strip()) > 1)
+                            opt_text_cleaned = ' '.join(l.strip() for l in lines if len(re.sub(r'[^a-zA-Z0-9]', '', l)) > 0)
                             opts_text.append(opt_text_cleaned)
                             if scan_count == 0:
                                 print(f"[DEBUG] OCR [{opt_labels[idx]}]: raw='{opt_text[:60]}' -> clean='{opt_text_cleaned[:60]}'")
@@ -504,5 +511,35 @@ class RoKQuizController:
     def run(self): self.ui.mainloop()
 
 if __name__ == "__main__":
-    app = RoKQuizController()
-    app.run()
+    import sys
+    import subprocess
+    
+    # Xử lý luồng chạy dựa trên tham số dòng lệnh
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--admin":
+            from src.gui.ui_admin import AdminDashboardApp
+            app = AdminDashboardApp()
+            app.mainloop()
+            sys.exit(0)
+        elif sys.argv[1] == "--user":
+            app = RoKQuizController()
+            app.run()
+            sys.exit(0)
+            
+    # Luồng mặc định: Chạy giao diện đăng nhập
+    from src.gui.ui_login import LoginApp
+    login_app = LoginApp(None)
+    login_app.role_result = None
+    login_app.mainloop()
+    
+    role = getattr(login_app, 'role_result', None)
+    try:
+        login_app.destroy()
+    except:
+        pass
+        
+    # Mở giao diện tương ứng ở một process hoàn toàn mới để tránh lỗi CustomTkinter
+    if role == "admin":
+        subprocess.Popen([sys.executable, "main.py", "--admin"])
+    elif role == "user":
+        subprocess.Popen([sys.executable, "main.py", "--user"])

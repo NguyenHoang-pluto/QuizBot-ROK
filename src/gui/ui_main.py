@@ -171,6 +171,16 @@ class OverlayQuestion(tk.Toplevel):
         self.grip_corner.place(x=w, y=h, anchor="se")
         self.deiconify()
 
+    def set_scan_mode(self, scanning):
+        if scanning:
+            self.grip_w.place_forget()
+            self.grip_h.place_forget()
+            self.grip_corner.place_forget()
+        else:
+            self.grip_w.place(x=self.q_w, y=self.q_h // 2, anchor="e")
+            self.grip_h.place(x=self.q_w // 2, y=self.q_h, anchor="s")
+            self.grip_corner.place(x=self.q_w, y=self.q_h, anchor="se")
+
     def start_drag(self, event):
         self._drag_data["x"] = event.x
         self._drag_data["y"] = event.y
@@ -302,6 +312,23 @@ class OverlayOptions(tk.Toplevel):
         self.grip_h.place(x=w // 2, y=h, anchor="s")
         self.grip_corner.place(x=w, y=h, anchor="se")
         self.deiconify()
+
+    def set_scan_mode(self, scanning):
+        state = "hidden" if scanning else "normal"
+        self.canvas.itemconfigure(self.grid_h_line, state=state)
+        self.canvas.itemconfigure(self.grid_v_line, state=state)
+        self.canvas.itemconfigure(self.lbl_a, state=state)
+        self.canvas.itemconfigure(self.lbl_b, state=state)
+        self.canvas.itemconfigure(self.lbl_c, state=state)
+        self.canvas.itemconfigure(self.lbl_d, state=state)
+        if scanning:
+            self.grip_w.place_forget()
+            self.grip_h.place_forget()
+            self.grip_corner.place_forget()
+        else:
+            self.grip_w.place(x=self.opts_w, y=self.opts_h // 2, anchor="e")
+            self.grip_h.place(x=self.opts_w // 2, y=self.opts_h, anchor="s")
+            self.grip_corner.place(x=self.opts_w, y=self.opts_h, anchor="se")
 
     def start_drag(self, event):
         self._drag_data["x"] = event.x
